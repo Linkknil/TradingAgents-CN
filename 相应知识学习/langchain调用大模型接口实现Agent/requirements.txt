@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+python-dotenv
+pydantic
+langchain>=0.2.13
+langchain-openai>=0.2.3
+langchain-community>=0.2.10
+langchain-chroma>=0.1.2
+chromadb>=0.5.5
+tiktoken
+pypdf
+dashscope
+requests
+google-api-python-client
+beautifulsoup4
+lxml
+pytz

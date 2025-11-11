@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # 你的 LangChain 应用服务
+  langchain-app:
+    build: .
+    container_name: my-langchain-agent
+    # 如果您的应用需要与宿主机网络互通（例如连接本地Ollama服务），可能需要使用 host 网络模式[1](@ref)
+    # network_mode: "host"
+    # 映射 FastAPI 服务端口
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}  # 从.env文件或宿主机环境变量获取
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-https://api.deepseek.com/v1}
+      - DATA_DIR=/app/data
+      # Embeddings 明确指定到 OpenAI 兼容端点，避免默认指向 DeepSeek 导致 404
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-${OPENAI_API_KEY}}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-large}
+      # 可以设置其他环境变量，如模型参数、工具配置等
+    volumes:
+      # 如果需要挂载本地目录（例如配置文件、数据卷）
+      - ./data:/app/data
+    # 如果使用 GPU（例如需要本地运行大模型）
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    # 依赖其他服务，例如数据库
+    # depends_on:
+    #   - redis
+    #   - postgres
+
+  # 示例：如果需要 Redis 作为记忆存储[6](@ref)
+  # redis:
+  #   image: redis:alpine
+  #   ports:
+  #     - "6379:6379"
+
+  # 示例：如果需要 PostgreSQL 数据库[6](@ref)
+  # postgres:
+  #   image: postgres:alpine
+  #   environment:
+  #     POSTGRES_DB: mydb
+  #     POSTGRES_USER: user
+  #     POSTGRES_PASSWORD: password
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+
+# 定义卷（如果需要）
+# volumes:
+#   postgres_data:

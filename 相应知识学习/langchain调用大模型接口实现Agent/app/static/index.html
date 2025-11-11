@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>和 AI 聊天 · LangChain Agent</title>
+  <style>
+    :root { --bg:#f6f7f9; --card:#fff; --line:#eee; --text:#111; --muted:#888; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, PingFang SC, Noto Sans SC, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    .container { max-width: 920px; margin: 0 auto; padding: 16px; }
+    .card { background: var(--card); border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,.06); overflow: hidden; }
+    .header { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #6aa84f; box-shadow: 0 0 0 4px rgba(106,168,79,.15); }
+    .header h1 { font-size: 16px; margin: 0; font-weight: 700; }
+    .toolbar { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .select, .input, .btn, .spin { font-size: 14px; }
+    .select, .input { border: 1px solid #ddd; border-radius: 10px; padding: 8px 10px; outline: none; background: #fff; }
+    .btn { background:#111; color:#fff; border:none; border-radius: 10px; padding: 8px 12px; cursor:pointer; }
+    .btn:disabled { opacity:.6; cursor:not-allowed; }
+    .spin { display:none; color:#6a6a6a; }
+    .msgs { height: 60vh; overflow-y: auto; padding: 16px; background: #fafbfc; }
+    .msg { display: flex; gap: 10px; margin-bottom: 12px; line-height: 1.6; }
+    .msg .role { flex: 0 0 42px; text-align: center; font-size: 12px; color: #666; }
+    .msg .bubble { background: #fff; border: 1px solid #eee; padding: 10px 12px; border-radius: 10px; max-width: 75%; white-space: pre-wrap; }
+    .msg.user .bubble { background: #e8f0fe; border-color: #d2e3fc; }
+    .msg.assistant .bubble { background: #f1f8e9; border-color: #dcedc8; }
+    .refs { margin-top: 8px; font-size: 12px; color: #506050; background: #eef7e6; border:1px dashed #cfe3b6; padding:8px; border-radius:8px; }
+    .footer { border-top: 1px solid var(--line); padding: 10px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .input-grow { flex: 1; min-width: 260px; }
+    .hint { font-size: 12px; color: var(--muted); padding: 6px 14px 14px; }
+    .pill { background:#f4f6f8; border:1px solid #e5e9ef; padding:6px 8px; border-radius: 999px; font-size:12px; color:#556; }
+    .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .memory-info { background:#f8f9fa; border:1px solid #e9ecef; padding:12px; border-radius:8px; margin:8px 0; font-size:13px; }
+    .memory-info h4 { margin:0 0 8px 0; color:#495057; font-size:14px; }
+    .memory-info .info-item { display:flex; justify-content:space-between; margin:4px 0; }
+    .memory-info .info-label { color:#6c757d; font-weight:500; }
+    .memory-info .info-value { color:#212529; }
+    .btn-small { padding:4px 8px; font-size:12px; }
+    .status-indicator { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+    .status-online { background:#28a745; }
+    .status-offline { background:#dc3545; }
+    .status-unknown { background:#ffc107; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="header">
+        <span class="dot"></span>
+        <h1>和 AI 聊天 · LangChain Agent</h1>
+        <div class="toolbar">
+          <div class="row">
+            <span class="pill">模式</span>
+            <select id="mode" class="select" title="选择工作模式">
+              <option value="chat">普通对话</option>
+              <option value="rag">RAG（知识检索）</option>
+            </select>
+            <span class="pill">RAG 参数</span>
+            <label class="row" title="召回片段数量">
+              k
+              <input id="ragK" class="input" type="number" min="1" max="10" value="4" style="width:64px;">
+            </label>
+            <button id="ingest" class="btn" title="扫描 ./data 并构建本地向量索引">构建索引</button>
+            <span class="pill">记忆</span>
+            <select id="memoryType" class="select" title="选择记忆类型">
+              <option value="buffer">缓冲记忆</option>
+              <option value="summary">摘要记忆</option>
+              <option value="summary_buffer">混合记忆</option>
+              <option value="vector">向量记忆</option>
+            </select>
+            <button id="memoryInfo" class="btn" title="查看记忆信息">记忆信息</button>
+            <button id="clearMemory" class="btn" title="清空对话记忆">清空记忆</button>
+            <span id="busy" class="spin">⏳ 处理中…</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="msgs" class="msgs"></div>
+
+      <div class="footer">
+        <input id="input" class="input input-grow" placeholder="说点什么，比如：帮我反驳‘你不懂技术’…（RAG 模式下会基于索引回答）" />
+        <button id="send" class="btn">发送</button>
+      </div>
+      <div class="hint">小提示：按 Enter 发送，Shift+Enter 换行。RAG 模式需要先“构建索引”。</div>
+    </div>
+  </div>
+
+  <script>
+    const $msgs  = document.getElementById('msgs');
+    const $input = document.getElementById('input');
+    const $send  = document.getElementById('send');
+    const $mode  = document.getElementById('mode');
+    const $ragK  = document.getElementById('ragK');
+    const $ingest= document.getElementById('ingest');
+    const $busy  = document.getElementById('busy');
+    const $memoryType = document.getElementById('memoryType');
+    const $memoryInfo = document.getElementById('memoryInfo');
+    const $clearMemory = document.getElementById('clearMemory');
+
+    // 调试：检查元素是否正确获取
+    console.log('元素检查:', {
+      msgs: !!$msgs,
+      input: !!$input,
+      send: !!$send,
+      mode: !!$mode,
+      ragK: !!$ragK,
+      ingest: !!$ingest,
+      busy: !!$busy,
+      memoryType: !!$memoryType,
+      memoryInfo: !!$memoryInfo,
+      clearMemory: !!$clearMemory
+    });
+
+    function setBusy(b) {
+      if ($busy) $busy.style.display = b ? 'inline' : 'none';
+      if ($send) $send.disabled = !!b;
+      if ($ingest) $ingest.disabled = !!b;
+      if ($memoryInfo) $memoryInfo.disabled = !!b;
+      if ($clearMemory) $clearMemory.disabled = !!b;
+    }
+
+    // 记忆管理相关函数
+    async function getMemoryInfo() {
+      try {
+        const response = await fetch('/memory/info');
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error('获取记忆信息失败:', error);
+        throw error;
+      }
+    }
+
+    async function clearMemory() {
+      try {
+        const response = await fetch('/memory/clear', { method: 'POST' });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error('清空记忆失败:', error);
+        throw error;
+      }
+    }
+
+    function displayMemoryInfo(info) {
+      const memoryTypeNames = {
+        'ConversationBufferMemory': '缓冲记忆',
+        'ConversationSummaryMemory': '摘要记忆', 
+        'ConversationSummaryBufferMemory': '混合记忆',
+        'VectorStoreRetrieverMemory': '向量记忆'
+      };
+
+      const typeName = memoryTypeNames[info.type] || info.type;
+      const statusClass = info.return_messages ? 'status-online' : 'status-offline';
+      
+      let infoHtml = `
+        <div class="memory-info">
+          <h4><span class="status-indicator ${statusClass}"></span>记忆管理器信息</h4>
+          <div class="info-item">
+            <span class="info-label">类型:</span>
+            <span class="info-value">${typeName}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">记忆键:</span>
+            <span class="info-value">${info.memory_key}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">返回消息:</span>
+            <span class="info-value">${info.return_messages ? '是' : '否'}</span>
+          </div>
+      `;
+
+      if (info.max_token_limit) {
+        infoHtml += `
+          <div class="info-item">
+            <span class="info-label">最大Token限制:</span>
+            <span class="info-value">${info.max_token_limit}</span>
+          </div>
+        `;
+      }
+
+      if (info.retriever_type) {
+        infoHtml += `
+          <div class="info-item">
+            <span class="info-label">检索器类型:</span>
+            <span class="info-value">${info.retriever_type}</span>
+          </div>
+        `;
+      }
+
+      if (info.search_kwargs && Object.keys(info.search_kwargs).length > 0) {
+        infoHtml += `
+          <div class="info-item">
+            <span class="info-label">检索参数:</span>
+            <span class="info-value">${JSON.stringify(info.search_kwargs)}</span>
+          </div>
+        `;
+      }
+
+      infoHtml += '</div>';
+      return infoHtml;
+    }
+
+    function append(role, text, refs) {
+      const wrap = document.createElement('div');
+      wrap.className = 'msg ' + role;
+
+      const who = document.createElement('div');
+      who.className = 'role';
+      who.textContent = role === 'user' ? '我' : 'AI';
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = text;
+
+      wrap.appendChild(who);
+      wrap.appendChild(bubble);
+
+      if (role === 'assistant' && Array.isArray(refs) && refs.length) {
+        const box = document.createElement('div');
+        box.className = 'refs';
+        const items = refs.map((r, i) => {
+          const src = r.source || '未知来源';
+          const page = (r.page !== undefined && r.page !== null) ? ` p.${r.page}` : '';
+          const idx  = (r.start_index !== undefined && r.start_index !== null) ? ` @${r.start_index}` : '';
+          return `#${i+1} ${src}${page}${idx}`;
+        }).join('\n');
+        box.textContent = `引用：\n${items}`;
+        bubble.appendChild(box);
+      }
+
+      $msgs.appendChild(wrap);
+      $msgs.scrollTop = $msgs.scrollHeight;
+    }
+
+    async function callJSON(url, payload) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(()=>res.statusText);
+        throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+      }
+      return res.json();
+    }
+
+    async function streamSSE(url, payload, { onDelta, onClear, onWarn, onDone }) {
+      console.log('开始流式请求:', url, payload);
+      
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+        body: JSON.stringify(payload || {})
+      });
+      
+      console.log('响应状态:', res.status);
+      console.log('响应头:', Object.fromEntries(res.headers.entries()));
+      
+      if (!res.ok || !res.body) {
+        const detail = await res.text().catch(()=>res.statusText);
+        throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        console.log('收到原始数据:', chunk);
+        buffer += chunk;
+
+        // 按 SSE 的 "\n\n" 分帧
+        let parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+        
+        for (const part of parts) {
+          console.log('处理部分:', part);
+          const lines = part.split('\n');
+          const dataLine = lines.find(l => l.startsWith('data:'));
+          if (!dataLine) continue;
+
+          const jsonText = dataLine.slice(5).trim();
+          if (!jsonText) continue;
+
+          console.log('JSON数据:', jsonText);
+          let evt;
+          try { 
+            evt = JSON.parse(jsonText); 
+            console.log('解析后事件:', evt);
+          } catch (e) { 
+            console.log('JSON解析失败:', e);
+            continue; 
+          }
+
+          if (evt.delta !== undefined) {
+            console.log('调用onDelta:', evt.delta);
+            onDelta && onDelta(evt.delta);
+          } else if (evt.clear) {
+            console.log('收到清除信号');
+            onClear && onClear();
+          } else if (evt.warn) {
+            console.log('调用onWarn:', evt.warn);
+            onWarn && onWarn(evt.warn);
+          } else if (evt.done) {
+            console.log('调用onDone');
+            onDone && onDone();
+          }
+        }
+      }
+
+      // 读完还有残留缓冲，尝试再处理一次（可选）
+      if (buffer.trim().length) {
+        try {
+          const maybe = buffer.split('\n').find(l => l.startsWith('data:'));
+          if (maybe) {
+            const evt = JSON.parse(maybe.slice(5).trim());
+            if (evt.delta !== undefined) onDelta && onDelta(evt.delta);
+            if (evt.warn) onWarn && onWarn(evt.warn);
+            if (evt.done) onDone && onDone();
+          }
+        } catch {}
+      }
+    }
+
+
+    async function send() {
+      const text = $input.value.trim();
+      if (!text) return;
+      append('user', text);
+      $input.value = '';
+      $input.focus();
+      setBusy(true);
+      append('assistant', '思考中…');
+
+      const mode = $mode.value;
+      try {
+        if (mode === 'rag') {
+          // ✅ 仍然沿用你原本的非流式 RAG
+          const k = Math.max(1, Math.min(10, parseInt($ragK.value || '4', 10)));
+          const data = await callJSON('/chat_rag', { question: text, k });
+          const last = $msgs.querySelector('.msg.assistant:last-child .bubble');
+          last.textContent = data?.answer ?? '(无响应)';
+          if (Array.isArray(data?.refs) && data.refs.length) {
+            const bubble = $msgs.querySelector('.msg.assistant:last-child .bubble');
+            const box = document.createElement('div');
+            box.className = 'refs';
+            const items = data.refs.map((r, i) => {
+              const src = r.source || '未知来源';
+              const page = (r.page !== undefined && r.page !== null) ? ` p.${r.page}` : '';
+              const idx  = (r.start_index !== undefined && r.start_index !== null) ? ` @${r.start_index}` : '';
+              return `#${i+1} ${src}${page}${idx}`;
+            }).join('\n');
+            box.textContent = `引用：\n${items}`;
+            bubble.appendChild(box);
+          }
+        } else {
+          // ✅ 普通对话改为流式：POST /chat 并带上 stream:true
+          const last = $msgs.querySelector('.msg.assistant:last-child .bubble');
+          last.textContent = ''; // 清空“思考中…”
+
+          await streamSSE('/chat', { input: text, stream: true }, {
+            onDelta: (chunk) => {
+              console.log('收到增量:', chunk);
+              last.textContent += chunk;
+              $msgs.scrollTop = $msgs.scrollHeight;
+            },
+            onClear: () => {
+              console.log('收到清除信号');
+              last.textContent = '';
+            },
+            onWarn: (w) => {
+              console.log('收到警告:', w);
+              last.textContent += `\n[warn] ${w}`;
+            },
+            onDone: () => {
+              console.log('流式完成');
+              // 可选：在结束时做些 UI 收尾
+            }
+          });
+        }
+      } catch (e) {
+        const last = $msgs.querySelector('.msg.assistant:last-child .bubble');
+        last.textContent = '请求失败：' + e.message;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function doIngest() {
+      setBusy(true);
+      append('assistant', '开始构建索引（扫描 ./data）…');
+      try {
+        const data = await callJSON('/ingest', {});
+        const last = $msgs.querySelector('.msg.assistant:last-child .bubble');
+        const stats = data?.stats ? `文档：${data.stats.docs}，切片：${data.stats.chunks}` : JSON.stringify(data);
+        last.textContent = `索引构建完成 ✅\n${stats}`;
+      } catch (e) {
+        const last = $msgs.querySelector('.msg.assistant:last-child .bubble');
+        last.textContent = '索引构建失败：' + e.message;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function showMemoryInfo() {
+      setBusy(true);
+      append('assistant', '正在获取记忆信息…');
+      try {
+        const data = await getMemoryInfo();
+        const last = $msgs.querySelector('.msg.assistant:last-child .bubble');
+        last.innerHTML = displayMemoryInfo(data.memory_info);
+      } catch (e) {
+        const last = $msgs.querySelector('.msg.assistant:last-child .bubble');
+        last.textContent = '获取记忆信息失败：' + e.message;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function doClearMemory() {
+      if (!confirm('确定要清空所有对话记忆吗？此操作不可撤销。')) {
+        return;
+      }
+      
+      setBusy(true);
+      append('assistant', '正在清空记忆…');
+      try {
+        const data = await clearMemory();
+        const last = $msgs.querySelector('.msg.assistant:last-child .bubble');
+        last.textContent = data.message || '记忆已清空';
+        
+        // 清空当前显示的消息（除了欢迎消息）
+        const messages = $msgs.querySelectorAll('.msg');
+        for (let i = 1; i < messages.length - 1; i++) {
+          messages[i].remove();
+        }
+        
+        // 添加清空后的提示
+        setTimeout(() => {
+          append('assistant', '记忆已清空，我们可以重新开始对话了！');
+        }, 500);
+        
+      } catch (e) {
+        const last = $msgs.querySelector('.msg.assistant:last-child .bubble');
+        last.textContent = '清空记忆失败：' + e.message;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    // 事件绑定
+    $send.addEventListener('click', send);
+    $input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+    $ingest.addEventListener('click', doIngest);
+    $memoryInfo.addEventListener('click', showMemoryInfo);
+    $clearMemory.addEventListener('click', doClearMemory);
+
+    // 页面加载时获取记忆信息
+    async function initMemoryInfo() {
+      try {
+        const data = await getMemoryInfo();
+        const memoryType = data.memory_info.type;
+        
+        // 根据当前记忆类型设置选择框
+        const typeMapping = {
+          'ConversationBufferMemory': 'buffer',
+          'ConversationSummaryMemory': 'summary',
+          'ConversationSummaryBufferMemory': 'summary_buffer',
+          'VectorStoreRetrieverMemory': 'vector'
+        };
+        
+        const currentType = typeMapping[memoryType] || 'buffer';
+        $memoryType.value = currentType;
+        
+        // 显示当前记忆类型
+        const typeNames = {
+          'buffer': '缓冲记忆',
+          'summary': '摘要记忆',
+          'summary_buffer': '混合记忆',
+          'vector': '向量记忆'
+        };
+        
+        console.log(`当前记忆类型: ${typeNames[currentType] || currentType}`);
+        
+      } catch (error) {
+        console.warn('无法获取记忆信息:', error);
+      }
+    }
+
+    // 初始化
+    initMemoryInfo();
+
+    // 欢迎语
+    append('assistant', '你好！我已就绪。\n- 普通对话：直接发送\n- 构建索引：点击右上"构建索引"\n- RAG 问答：切换到 RAG 模式再提问（可调 k）\n- 记忆管理：查看记忆信息、清空记忆');
+  </script>
+</body>
+</html>
