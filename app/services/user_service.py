@@ -86,7 +86,12 @@ class UserService:
                     "email_notifications": False,
                     "desktop_notifications": True,
                     "analysis_complete_notification": True,
-                    "system_maintenance_notification": True
+                    "system_maintenance_notification": True,
+                    # 自动下载设置
+                    "auto_download_report": False,
+                    "auto_download_format": "markdown",
+                    "auto_download_path": None,
+                    "auto_download_summary": False
                 },
                 "daily_quota": 1000,
                 "concurrent_limit": 3,

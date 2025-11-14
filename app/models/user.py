@@ -56,6 +56,12 @@ class UserPreferences(BaseModel):
     desktop_notifications: bool = True
     analysis_complete_notification: bool = True
     system_maintenance_notification: bool = True
+    
+    # 自动下载设置
+    auto_download_report: bool = False  # 是否自动下载分析报告
+    auto_download_format: str = "markdown"  # 自动下载格式: markdown, json, pdf, docx
+    auto_download_path: Optional[str] = None  # 自动下载保存路径，None表示使用默认路径
+    auto_download_summary: bool = False  # 是否启用AI报告总结（仅Markdown格式）
 
 
 class FavoriteStock(BaseModel):

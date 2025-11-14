@@ -973,6 +973,13 @@ class SimpleAnalysisService:
             except Exception as save_error:
                 logger.error(f"❌ 保存分析结果失败: {task_id} - {save_error}")
                 # 保存失败不影响分析完成状态
+            
+            # 自动下载报告（如果用户启用了此功能）
+            try:
+                await self._auto_download_report_if_enabled(task_id, user_id, result)
+            except Exception as download_error:
+                logger.warning(f"⚠️ 自动下载报告失败: {task_id} - {download_error}")
+                # 自动下载失败不影响分析完成状态
 
             # 🔍 调试：检查即将保存到内存的result
             logger.info(f"🔍 [DEBUG] 即将保存到内存的result键: {list(result.keys())}")
@@ -2712,6 +2719,77 @@ class SimpleAnalysisService:
                 logger.info(f"💾 降级保存成功 (仅数据库): {task_id}")
             except Exception as fallback_error:
                 logger.error(f"❌ 降级保存也失败: {task_id} - {fallback_error}")
+    
+    async def _auto_download_report_if_enabled(
+        self, 
+        task_id: str, 
+        user_id: str, 
+        result: Dict[str, Any]
+    ):
+        """
+        如果用户启用了自动下载功能，则自动下载分析报告
+        
+        Args:
+            task_id: 任务ID
+            user_id: 用户ID
+            result: 分析结果
+        """
+        try:
+            # 获取用户偏好设置
+            from app.core.database import get_mongo_db
+            db = await get_mongo_db()
+            
+            user_doc = await db.users.find_one({"_id": ObjectId(user_id)})
+            if not user_doc:
+                logger.warning(f"⚠️ 未找到用户: {user_id}")
+                return
+            
+            preferences = user_doc.get("preferences", {})
+            auto_download = preferences.get("auto_download_report", False)
+            
+            if not auto_download:
+                logger.debug(f"📋 用户 {user_id} 未启用自动下载功能")
+                return
+            
+            # 获取下载配置
+            download_format = preferences.get("auto_download_format", "markdown")
+            download_path = preferences.get("auto_download_path")
+            enable_summary = preferences.get("auto_download_summary", False)
+            
+            # 获取股票代码和分析日期
+            stock_symbol = result.get('stock_symbol') or result.get('stock_code', 'UNKNOWN')
+            analysis_date = result.get('analysis_date')
+            if not analysis_date:
+                # 如果没有分析日期，使用当前日期
+                from datetime import datetime
+                analysis_date = datetime.now().strftime('%Y-%m-%d')
+            elif isinstance(analysis_date, datetime):
+                analysis_date = analysis_date.strftime('%Y-%m-%d')
+            
+            # 获取报告ID（优先使用analysis_id，如果没有则使用task_id）
+            report_id = result.get('analysis_id') or task_id
+            
+            logger.info(f"📥 开始自动下载报告: 用户={user_id}, 股票={stock_symbol}, 格式={download_format}")
+            
+            # 调用自动下载函数
+            from app.utils.auto_download import auto_download_report
+            saved_path = await auto_download_report(
+                report_id=report_id,
+                stock_symbol=stock_symbol,
+                analysis_date=analysis_date,
+                format=download_format,
+                save_path=download_path,
+                db=db,
+                enable_summary=enable_summary
+            )
+            
+            if saved_path:
+                logger.info(f"✅ 自动下载报告成功: {saved_path}")
+            else:
+                logger.warning(f"⚠️ 自动下载报告失败: 未返回保存路径")
+        
+        except Exception as e:
+            logger.error(f"❌ 自动下载报告过程出错: {e}", exc_info=True)
 
     async def _save_modular_reports_to_data_dir(self, result: Dict[str, Any], stock_symbol: str) -> Dict[str, str]:
         """保存分模块报告到data目录 - 完全采用web目录的文件结构"""
